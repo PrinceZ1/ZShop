@@ -1,5 +1,6 @@
 package com.princez1.ZShop.entities;
 
+import com.fasterxml.jackson.annotation.JsonBackReference;
 import com.fasterxml.jackson.annotation.JsonManagedReference;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
@@ -70,4 +71,9 @@ public class Order {
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     @JsonManagedReference
     private List<OrderDetail> orderDetails;
+
+    @ManyToOne
+    @JoinColumn(name = "coupon_id")
+    @JsonBackReference
+    private Coupon coupon;
 }
