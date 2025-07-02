@@ -23,4 +23,9 @@ public interface ProductService {
     Product updateProduct(long id, ProductDTO productDTO) throws Exception;
     void deleteProduct(long id);
     boolean existsByName(String name);
+    ProductImage createProductImage(
+            Long productId,
+            ProductImageDTO productImageDTO) throws Exception;
+    String storeFile(MultipartFile file) throws IOException;
+    void deleteFile(String filename) throws IOException;
 }

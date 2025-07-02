@@ -1,10 +1,14 @@
 package com.princez1.ZShop.service.impl;
 
 import com.princez1.ZShop.dtos.ProductDTO;
+import com.princez1.ZShop.dtos.ProductImageDTO;
 import com.princez1.ZShop.entities.Category;
 import com.princez1.ZShop.entities.Product;
+import com.princez1.ZShop.entities.ProductImage;
 import com.princez1.ZShop.exceptions.DataNotFoundException;
+import com.princez1.ZShop.exceptions.InvalidParamException;
 import com.princez1.ZShop.repositories.CategoryRepository;
+import com.princez1.ZShop.repositories.ProductImageRepository;
 import com.princez1.ZShop.repositories.ProductRepository;
 import com.princez1.ZShop.responses.product.ProductResponse;
 import com.princez1.ZShop.service.ProductService;
@@ -13,15 +17,27 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
 public class ProductServiceImpl implements ProductService {
     private final ProductRepository productRepository;
     private final CategoryRepository categoryRepository;
+    private final ProductImageRepository productImageRepository;
+    private static String UPLOADS_FOLDER = "uploads";
+
     @Override
     @Transactional
     public Product createProduct(ProductDTO productDTO) throws DataNotFoundException {
@@ -29,7 +45,7 @@ public class ProductServiceImpl implements ProductService {
                 .findById(productDTO.getCategoryId())
                 .orElseThrow(() ->
                         new DataNotFoundException(
-                                "Cannot find category with id: "+productDTO.getCategoryId()));
+                                "Cannot find category with id: "+ productDTO.getCategoryId()));
 
         Product newProduct = Product.builder()
                 .name(productDTO.getName())
@@ -110,5 +126,70 @@ public class ProductServiceImpl implements ProductService {
     public boolean existsByName(String name) {
         return productRepository.existsByName(name);
     }
+    @Override
+    @Transactional
+    public ProductImage createProductImage(
+            Long productId,
+            ProductImageDTO productImageDTO) throws Exception {
+        Product existingProduct = productRepository
+                .findById(productId)
+                .orElseThrow(() ->
+                        new DataNotFoundException(
+                                "Cannot find product with id: "+productImageDTO.getProductId()));
+        ProductImage newProductImage = ProductImage.builder()
+                .product(existingProduct)
+                .imageUrl(productImageDTO.getImageUrl())
+                .build();
+        //Ko cho insert quá 5 ảnh cho 1 sản phẩm
+        int size = productImageRepository.findByProductId(productId).size();
+        if(size >= ProductImage.MAXIMUM_IMAGES_PER_PRODUCT) {
+            throw new InvalidParamException(
+                    "Number of images must be <= "
+                            +ProductImage.MAXIMUM_IMAGES_PER_PRODUCT);
+        }
+        if (existingProduct.getThumbnail() == null ) {
+            existingProduct.setThumbnail(newProductImage.getImageUrl());
+        }
+        productRepository.save(existingProduct);
+        return productImageRepository.save(newProductImage);
+    }
+    @Override
+    public void deleteFile(String filename) throws IOException {
+        // Đường dẫn đến thư mục chứa file
+        java.nio.file.Path uploadDir = Paths.get(UPLOADS_FOLDER);
+        // Đường dẫn đầy đủ đến file cần xóa
+        java.nio.file.Path filePath = uploadDir.resolve(filename);
 
+        // Kiểm tra xem file tồn tại hay không
+        if (Files.exists(filePath)) {
+            // Xóa file
+            Files.delete(filePath);
+        } else {
+            throw new FileNotFoundException("File not found: " + filename);
+        }
+    }
+    private boolean isImageFile(MultipartFile file) {
+        String contentType = file.getContentType();
+        return contentType != null && contentType.startsWith("image/");
+    }
+    @Override
+    public String storeFile(MultipartFile file) throws IOException {
+        if (!isImageFile(file) || file.getOriginalFilename() == null) {
+            throw new IOException("Invalid image format");
+        }
+        String filename = StringUtils.cleanPath(Objects.requireNonNull(file.getOriginalFilename()));
+        // Thêm UUID vào trước tên file để đảm bảo tên file là duy nhất
+        String uniqueFilename = UUID.randomUUID().toString() + "_" + filename;
+        // Đường dẫn đến thư mục mà bạn muốn lưu file
+        java.nio.file.Path uploadDir = Paths.get(UPLOADS_FOLDER);
+        // Kiểm tra và tạo thư mục nếu nó không tồn tại
+        if (!Files.exists(uploadDir)) {
+            Files.createDirectories(uploadDir);
+        }
+        // Đường dẫn đầy đủ đến file
+        java.nio.file.Path destination = Paths.get(uploadDir.toString(), uniqueFilename);
+        // Sao chép file vào thư mục đích
+        Files.copy(file.getInputStream(), destination, StandardCopyOption.REPLACE_EXISTING);
+        return uniqueFilename;
+    }
 }
